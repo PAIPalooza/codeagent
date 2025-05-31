@@ -15,8 +15,10 @@ class GenerationStep(DBBase, BaseMixin):
     __tablename__ = "generation_steps"
     
     id = Column(Integer, primary_key=True, index=True)
-    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False, index=True)
-    step_name = Column(String(100), nullable=False)  # e.g., "generate_models", "create_routes"
+    project_id = Column(String(36), ForeignKey("projects.id"), nullable=False, index=True)
+    sequence_order = Column(Integer, nullable=False)  # Order of execution
+    tool_name = Column(String(100), nullable=False)  # Name of the tool to execute
+    input_payload = Column(JSON, nullable=True)  # Input parameters for the tool
     status = Column(Enum(StepStatus), default=StepStatus.PENDING, nullable=False)
     details = Column(JSON, nullable=True)  # Additional details about the step
     error = Column(Text, nullable=True)  # Error message if the step failed
@@ -28,7 +30,9 @@ class GenerationStep(DBBase, BaseMixin):
         return {
             "id": self.id,
             "project_id": self.project_id,
-            "step_name": self.step_name,
+            "sequence_order": self.sequence_order,
+            "tool_name": self.tool_name,
+            "input_payload": self.input_payload,
             "status": self.status.value if self.status else None,
             "details": self.details,
             "error": self.error,

@@ -14,7 +14,7 @@ class Project(DBBase, BaseMixin):
     """Project model representing a code generation project"""
     __tablename__ = "projects"
     
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(String(36), primary_key=True, index=True)  # UUID as string
     name = Column(String(255), nullable=False, index=True)
     description = Column(Text, nullable=True)
     status = Column(Enum(ProjectStatus), default=ProjectStatus.DRAFT, nullable=False)
@@ -22,6 +22,7 @@ class Project(DBBase, BaseMixin):
     styling = Column(String(50), nullable=True)  # e.g., "tailwind", "bootstrap"
     canvas_layout = Column(JSON, nullable=True)  # Store the canvas layout as JSON
     user_id = Column(String(36), nullable=True)  # Store UUID as string for SQLite compatibility
+    agent_id = Column(String(36), nullable=True)  # Store agent UUID as string
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now(), nullable=True)
     

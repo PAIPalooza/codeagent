@@ -64,9 +64,11 @@ async def health_check():
 
 # Import and include routers here
 from .routers import projects as projects_router
+from .routers import app_generation as app_generation_router
 
 # Include routers
 app.include_router(projects_router.router)
+app.include_router(app_generation_router.router)
 
 # Error handlers
 @app.exception_handler(404)
