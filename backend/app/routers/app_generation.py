@@ -9,9 +9,9 @@ import json
 import uuid
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from pydantic import BaseModel, Field, validator
 from typing import List, Dict, Any, Optional
 from datetime import datetime
+from pydantic import BaseModel, Field, validator
 
 from ..models.project import Project
 from ..models.generation_step import GenerationStep, StepStatus
@@ -62,14 +62,34 @@ class AppSpec(BaseModel):
 
     @validator('tech_stack')
     def validate_tech_stack(cls, v):
-        # Ensure tech_stack contains at least backend or frontend
-        if not any(key in v for key in ['backend', 'frontend']):
-            raise ValueError("Tech stack must contain at least 'backend' or 'frontend' key")
+        if not v or not all(k in v for k in ['frontend', 'backend']):
+            raise ValueError('Tech stack must include frontend and backend')
         return v
 
 class GenerateResponse(BaseModel):
+    """Response model for app generation."""
     status: str
     project_id: str
+
+class GenerationStepResponse(BaseModel):
+    """Response model for generation step details."""
+    id: int
+    project_id: str
+    sequence_order: int
+    tool_name: str
+    input_payload: Dict[str, Any] = None
+    status: str
+    details: Dict[str, Any] = None
+    error: Optional[str] = None
+    created_at: str
+    updated_at: Optional[str] = None
+    
+class ProjectStepsResponse(BaseModel):
+    """Response model for a project's generation steps."""
+    project_id: str
+    project_name: str
+    project_status: str
+    steps: List[GenerationStepResponse]
 
 class AppSpecResponse(BaseModel):
     project_name: str
@@ -159,17 +179,38 @@ async def generate_app(spec: AppSpec, db: Session = Depends(get_db)):
         db.refresh(db_project)
         
         # Insert each step into the generation_steps table
-        for i, step in enumerate(plan):
-            db_step = GenerationStep(
-                project_id=project_id,
-                sequence_order=i + 1,
-                tool_name=step.get("tool", "unknown"),
-                input_payload=json.dumps(step.get("input", {})),
-                status="PENDING"
-            )
-            db.add(db_step)
-        
-        db.commit()
+        try:
+            for i, step in enumerate(plan):
+                # Validate step has required fields
+                if "tool" not in step:
+                    raise ValueError(f"Step {i+1} missing required 'tool' field")
+                if "input" not in step:
+                    raise ValueError(f"Step {i+1} missing required 'input' field")
+                
+                # Create step in database with PENDING status
+                db_step = GenerationStep(
+                    project_id=project_id,
+                    sequence_order=i + 1,
+                    tool_name=step.get("tool"),
+                    input_payload=json.dumps(step.get("input")),
+                    status=StepStatus.PENDING.value
+                )
+                db.add(db_step)
+                
+                # Log step creation
+                print(f"Added step {i+1} with tool '{step.get('tool')}' to project {project_id}")
+            
+            # Commit all steps at once (atomic transaction)
+            db.commit()
+            print(f"Successfully inserted {len(plan)} steps for project {project_id}")
+        except Exception as e:
+            # Roll back step insertions if any fail
+            db.rollback()
+            # Update project status to ERROR
+            db_project.status = "ERROR"
+            db.add(db_project)
+            db.commit()
+            raise ValueError(f"Failed to insert generation steps: {str(e)}")
         
         return {
             "status": "in_progress",
@@ -210,6 +251,10 @@ async def recall_last_app():
         memory_content = search_result["results"][0]["content"]
         
         return memory_content
+        
+    except HTTPException:
+        # Re-raise HTTP exceptions
+        raise
     except Exception as e:
         # Log the error
         print(f"Error recalling app: {str(e)}")
@@ -222,12 +267,68 @@ async def recall_last_app():
             "tech_stack": {"frontend": ["React"], "backend": ["FastAPI"]},
             "styling": "Minimal and clean"
         }
-    
+
+@router.get("/project-steps/{project_id}", response_model=ProjectStepsResponse)
+async def get_project_steps(project_id: str, db: Session = Depends(get_db)):
+    """Retrieve all generation steps for a specific project.
+
+    Args:
+        project_id: The UUID of the project to retrieve steps for
+        db: Database session dependency
+
+    Returns:
+        ProjectStepsResponse: Project details and its generation steps
+        
+    Raises:
+        HTTPException: If project is not found
+    """
+    try:
+        # Verify project exists
+        project = db.query(Project).filter(Project.id == project_id).first()
+        if not project:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Project with ID {project_id} not found"
+            )
+        
+        # Get all steps for the project ordered by sequence_order
+        steps = db.query(GenerationStep)\
+            .filter(GenerationStep.project_id == project_id)\
+            .order_by(GenerationStep.sequence_order)\
+            .all()
+        
+        # Convert steps to response model format
+        step_responses = []
+        for step in steps:
+            step_dict = step.to_dict()
+            
+            # Parse JSON strings to Python objects for the response
+            if step_dict["input_payload"] and isinstance(step_dict["input_payload"], str):
+                try:
+                    step_dict["input_payload"] = json.loads(step_dict["input_payload"])
+                except json.JSONDecodeError:
+                    step_dict["input_payload"] = {"error": "Invalid JSON"}
+                    
+            if step_dict["details"] and isinstance(step_dict["details"], str):
+                try:
+                    step_dict["details"] = json.loads(step_dict["details"])
+                except json.JSONDecodeError:
+                    step_dict["details"] = {"error": "Invalid JSON"}
+            
+            step_responses.append(GenerationStepResponse(**step_dict))
+        
+        # Return project details and steps
+        return ProjectStepsResponse(
+            project_id=project.id,
+            project_name=project.name,
+            project_status=project.status,
+            steps=step_responses
+        )
     except HTTPException:
         # Re-raise HTTP exceptions
         raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error recalling app specification: {str(e)}"
+            detail=f"Error retrieving project steps: {str(e)}"
         )

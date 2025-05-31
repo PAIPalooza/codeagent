@@ -1,14 +1,16 @@
-from sqlalchemy import Column, String, Text, ForeignKey, Enum, JSON, Integer, DateTime
+from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Text, JSON, Enum
 from sqlalchemy.sql import func
-import enum
 from .base import BaseMixin
 from ..database import Base as DBBase
+from enum import Enum
 
-class StepStatus(enum.Enum):
-    PENDING = "pending"
-    IN_PROGRESS = "in_progress"
-    COMPLETED = "completed"
-    FAILED = "failed"
+# Define step status as an enum for consistency
+class StepStatus(str, Enum):
+    PENDING = "PENDING"
+    IN_PROGRESS = "IN_PROGRESS"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+    SKIPPED = "SKIPPED"
 
 class GenerationStep(DBBase, BaseMixin):
     """Model to track individual steps in the code generation process"""
