@@ -23,11 +23,10 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# Import the Base from models to set up the target_metadata
-from app.models.base import Base
-from app.models.project import Project
-from app.models.generation_step import GenerationStep
-from app.models.log import Log
+# Import all models through the model registry to set up the target_metadata
+from app.database import Base
+# Import all models to ensure they're registered with SQLAlchemy
+from app.models import __all__  # noqa: F401
 
 target_metadata = Base.metadata
 
