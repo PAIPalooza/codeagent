@@ -21,38 +21,40 @@ logger = logging.getLogger(__name__)
 
 
 class AINativeBaseTool(ABC):
-    """Base class for AINative API tool wrappers.
+    """Base class for Cody AI Development Platform API tool wrappers.
     
-    This abstract base class handles common functionality for all AINative
+    This abstract base class handles common functionality for all AI API
     tool wrappers including authentication, error handling, and HTTP requests.
     
     Attributes:
-        base_url: The base URL for AINative API.
+        base_url: The base URL for the Cody AI Development Platform API.
         api_key: The API key for authentication.
         endpoint: The specific API endpoint for this tool.
     """
     
     def __init__(self, endpoint: str) -> None:
-        """Initialize the AINative tool with API configuration.
+        """Initialize the AI tool with API configuration.
         
         Args:
             endpoint: The specific API endpoint for this tool.
         
-        Raises:
-            ValueError: If required environment variables are not set.
+        Note:
+            If API credentials are missing, the tool will operate in mock mode.
         """
-        self.base_url = os.environ.get("AINATIVE_BASE_URL")
+        self.base_url = os.environ.get("AINATIVE_BASE_URL", "https://api.ainative.studio/api/v1")
         self.api_key = os.environ.get("AINATIVE_API_KEY")
+        self.mock_mode = False
         
-        if not self.base_url:
-            raise ValueError("AINATIVE_BASE_URL environment variable is required")
-        if not self.api_key:
-            raise ValueError("AINATIVE_API_KEY environment variable is required")
+        # Check if we need to use mock mode
+        if not self.api_key or self.api_key == "your_ainative_api_key_here":
+            logger.warning(f"Missing or invalid API credentials. Using mock mode for {endpoint}")
+            self.mock_mode = True
+            self.api_key = "mock-api-key"
         
         self.endpoint = endpoint
     
     def _get_headers(self) -> Dict[str, str]:
-        """Get HTTP headers for AINative API requests.
+        """Get HTTP headers for API requests.
         
         Returns:
             Dictionary containing required HTTP headers.
@@ -67,7 +69,7 @@ class AINativeBaseTool(ABC):
         self, 
         payload: Dict[str, Any]
     ) -> Dict[str, Any]:
-        """Make an HTTP request to the AINative API.
+        """Make an HTTP request to the Cody AI Development Platform API.
         
         Args:
             payload: The request payload to send.
@@ -79,6 +81,11 @@ class AINativeBaseTool(ABC):
             httpx.HTTPStatusError: If the HTTP request fails.
             json.JSONDecodeError: If the response is not valid JSON.
         """
+        if self.mock_mode:
+            logger.info(f"MOCK MODE: Simulating API call to {self.endpoint}")
+            # Return a mock response for testing
+            return self._generate_mock_response(payload)
+        
         url = f"{self.base_url}/{self.endpoint}"
         headers = self._get_headers()
         
@@ -120,6 +127,28 @@ class AINativeBaseTool(ABC):
         except Exception as e:
             logger.error(f"Unexpected error: {e}")
             return {"error": True, "message": f"Unexpected error: {str(e)}"}
+        
+    def _generate_mock_response(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """Generate a mock response for testing purposes.
+        
+        Args:
+            payload: The request payload that would have been sent to the API.
+            
+        Returns:
+            Dictionary containing a mock response appropriate for the tool.
+        """
+        # Default mock response with a successful outcome
+        # This method should be overridden by specific tool implementations
+        # to provide more realistic mock responses
+        return {
+            "success": True,
+            "mock": True,
+            "endpoint": self.endpoint,
+            "message": "This is a mock response for testing",
+            "file_path": "example.txt",
+            "code": "# This is mock generated code\nprint('Hello, world!')\n",
+            "received_payload": payload
+        }
     
     @abstractmethod
     async def _call(self, **kwargs: Any) -> Dict[str, Any]:
