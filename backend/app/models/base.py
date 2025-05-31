@@ -1,6 +1,7 @@
 from sqlalchemy import Column, Integer, DateTime, func, String
-from sqlalchemy.ext.declarative import declarative_base, declared_attr
+from sqlalchemy.ext.declarative import declared_attr
 from datetime import datetime
+from ..database import Base
 
 class BaseMixin:
     """Base model mixin that includes common columns and methods."""
@@ -16,6 +17,3 @@ class BaseMixin:
     def to_dict(self):
         """Convert model instance to dictionary."""
         return {c.name: getattr(self, c.name) for c in self.__table__.columns}
-
-# Create declarative base
-Base = declarative_base(cls=BaseMixin)

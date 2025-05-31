@@ -1,6 +1,8 @@
-from sqlalchemy import Column, String, Text, ForeignKey, Enum, JSON, Integer
+from sqlalchemy import Column, String, Text, ForeignKey, Enum, JSON, Integer, DateTime
+from sqlalchemy.sql import func
 import enum
-from .base import Base
+from .base import BaseMixin
+from ..database import Base as DBBase
 
 class LogLevel(enum.Enum):
     DEBUG = "debug"
@@ -9,15 +11,17 @@ class LogLevel(enum.Enum):
     ERROR = "error"
     CRITICAL = "critical"
 
-class Log(Base):
+class Log(DBBase, BaseMixin):
     """Model to store system logs"""
     __tablename__ = "logs"
     
+    id = Column(Integer, primary_key=True, index=True)
     level = Column(Enum(LogLevel), nullable=False)
     message = Column(Text, nullable=False)
     source = Column(String(100), nullable=True)  # e.g., "backend", "frontend", "worker"
     context = Column(JSON, nullable=True)  # Additional context as JSON
     project_id = Column(Integer, ForeignKey("projects.id"), nullable=True, index=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
     
     def to_dict(self):
         """Convert model to dictionary"""
