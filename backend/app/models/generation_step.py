@@ -37,7 +37,11 @@ class GenerationStep(Base, BaseMixin):
     # No need to redefine id, created_at, updated_at as they come from BaseMixin
     project_id = Column(Integer, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True)
     step_name = Column(String(100), nullable=False)  # e.g., "generate_models", "create_routes"
+    tool_name = Column(String(100), nullable=False)  # e.g., "codegen_create", "codegen_refactor"
+    sequence_order = Column(Integer, nullable=False, default=0)  # Order in which steps should be executed
     status = Column(Enum(StepStatus), default=StepStatus.PENDING, nullable=False)
+    input_payload = Column(JSON, nullable=True)  # Input data for the tool
+    output_payload = Column(JSON, nullable=True)  # Output data from the tool
     details = Column(JSON, nullable=True)  # Additional details about the step
     error = Column(Text, nullable=True)  # Error message if the step failed
     
@@ -54,7 +58,11 @@ class GenerationStep(Base, BaseMixin):
             "id": self.id,
             "project_id": self.project_id,
             "step_name": self.step_name,
+            "tool_name": self.tool_name,
+            "sequence_order": self.sequence_order,
             "status": self.status.value if self.status else None,
+            "input_payload": self.input_payload,
+            "output_payload": self.output_payload,
             "details": self.details,
             "error": self.error,
             "created_at": self.created_at.isoformat() if self.created_at else None,

@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 
 # Get database URL from environment variables or use SQLite as default
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./sql_app.db")
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./temp/test_app.db")
 
 # Create base class for models
 Base = declarative_base()
