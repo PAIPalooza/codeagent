@@ -17,6 +17,7 @@ class ProjectStatus(enum.Enum):
     DRAFT = "draft"
     IN_PROGRESS = "in_progress"
     COMPLETED = "completed"
+    SUCCESS = "success"  # Successfully completed with download ZIP available
     FAILED = "failed"
 
 
@@ -45,6 +46,7 @@ class Project(Base, BaseMixin):
     styling = Column(String(50), nullable=True)  # e.g., "tailwind", "bootstrap"
     canvas_layout = Column(JSON, nullable=True)  # Store the canvas layout as JSON
     user_id = Column(String(36), nullable=True, index=True)  # Store UUID as string for SQLite compatibility
+    download_url = Column(String(512), nullable=True)  # URL to download the generated ZIP file
     
     # Define relationships - these will be properly loaded when SQLAlchemy imports all models
     generation_steps = relationship("GenerationStep", back_populates="project", cascade="all, delete-orphan")
@@ -65,6 +67,7 @@ class Project(Base, BaseMixin):
             "styling": self.styling,
             "canvas_layout": self.canvas_layout,
             "user_id": self.user_id,
+            "download_url": self.download_url,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
             "generation_steps": [step.to_dict() for step in self.generation_steps] if self.generation_steps else [],
