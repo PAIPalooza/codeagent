@@ -1,0 +1,174 @@
+.status-panel {
+  max-width: 800px;
+  margin: 2rem auto;
+  padding: 1.5rem;
+  background: #f8fafc;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+}
+
+.status-panel h3 {
+  margin-bottom: 1rem;
+  color: #1f2937;
+  text-align: center;
+}
+
+.error-message {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 1rem;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 4px;
+  color: #dc2626;
+  margin-bottom: 1rem;
+}
+
+.success-message {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 1rem;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-radius: 4px;
+  color: #15803d;
+  margin-bottom: 1rem;
+}
+
+.logs-container {
+  background: white;
+  border-radius: 4px;
+  border: 1px solid #e2e8f0;
+  max-height: 400px;
+  overflow-y: auto;
+  margin-bottom: 1rem;
+}
+
+.no-logs {
+  padding: 2rem;
+  text-align: center;
+  color: #6b7280;
+  font-style: italic;
+}
+
+.logs-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.log-entry {
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid #f1f5f9;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.log-entry:last-child {
+  border-bottom: none;
+}
+
+.log-info {
+  background: #f8fafc;
+}
+
+.log-warning {
+  background: #fffbeb;
+  border-left: 4px solid #f59e0b;
+}
+
+.log-error {
+  background: #fef2f2;
+  border-left: 4px solid #dc2626;
+}
+
+.log-debug {
+  background: #f0f9ff;
+  border-left: 4px solid #0ea5e9;
+}
+
+.log-timestamp {
+  font-size: 0.75rem;
+  color: #6b7280;
+  font-family: monospace;
+}
+
+.log-message {
+  color: #1f2937;
+  font-weight: 500;
+}
+
+.log-context {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.25rem;
+}
+
+.context-item {
+  font-size: 0.75rem;
+  background: #e5e7eb;
+  padding: 0.25rem 0.5rem;
+  border-radius: 3px;
+  color: #4b5563;
+  font-family: monospace;
+}
+
+.download-section {
+  text-align: center;
+}
+
+.download-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 2rem;
+  background: #10b981;
+  color: white;
+  text-decoration: none;
+  border-radius: 4px;
+  font-weight: 600;
+  transition: background-color 0.2s;
+}
+
+.download-btn:hover {
+  background: #059669;
+}
+
+.generating-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 1rem;
+  color: #3b82f6;
+  font-weight: 500;
+}
+
+.spinner {
+  width: 20px;
+  height: 20px;
+  border: 2px solid #e5e7eb;
+  border-top: 2px solid #3b82f6;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+@media (max-width: 768px) {
+  .status-panel {
+    margin: 1rem;
+    padding: 1rem;
+  }
+  
+  .logs-container {
+    max-height: 300px;
+  }
+}

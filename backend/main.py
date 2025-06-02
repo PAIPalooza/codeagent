@@ -8,10 +8,13 @@ import logging
 from dotenv import load_dotenv
 
 # Import database and models
-from app.database import get_db, create_tables
+from app.database import get_db, create_tables, init_db, init_app
 from app.models.project import Project as ProjectModel, ProjectStatus
 from app.models.generation_step import GenerationStep as GenerationStepModel
 from app.models.log import Log as LogModel, LogLevel
+
+# Import routers
+from app.routers.app_generation import router as app_generation_router
 
 # Load environment variables
 load_dotenv()
@@ -38,14 +41,20 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Create database tables on startup
+# Include routers
+app.include_router(app_generation_router)
+
+# Initialize database and create tables on startup
 @app.on_event("startup")
 def on_startup():
     try:
-        create_tables()
-        logger.info("Database tables created successfully")
+        # First initialize the database connection
+        init_db()
+        # Then initialize the app and create tables
+        init_app()
+        logger.info("Database initialized and tables created successfully")
     except Exception as e:
-        logger.error(f"Error creating database tables: {str(e)}")
+        logger.error(f"Error initializing database: {str(e)}")
         raise
 
 # Pydantic models for request/response validation
@@ -62,7 +71,7 @@ class ProjectResponse(ProjectBase):
     id: int
     status: str
     created_at: datetime
-    updated_at: datetime
+    updated_at: Optional[datetime] = None
 
     class Config:
         orm_mode = True

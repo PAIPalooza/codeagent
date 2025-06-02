@@ -1,12 +1,15 @@
 import os
 import logging
+import time
+from datetime import datetime
 from fastapi import FastAPI, Request, Depends, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 from starlette.responses import StreamingResponse, Response
 from sqlalchemy.orm import Session
-from .database import SessionLocal, engine, Base, init_app
+from .database import SessionLocal, engine, Base, init_app, get_db
 from . import models, schemas
+from .services.monitoring_service import monitoring_service
 
 # Configure logging
 logging.basicConfig(
@@ -36,6 +39,26 @@ app = FastAPI(
     redoc_url="/redoc",
     openapi_url="/openapi.json"
 )
+
+# Request monitoring middleware
+@app.middleware("http")
+async def monitoring_middleware(request: Request, call_next):
+    start_time = time.time()
+    
+    # Increment request counter
+    monitoring_service.increment_request_count()
+    
+    response = await call_next(request)
+    
+    # Track errors
+    if response.status_code >= 400:
+        monitoring_service.increment_error_count()
+    
+    # Log performance
+    process_time = time.time() - start_time
+    response.headers["X-Process-Time"] = str(process_time)
+    
+    return response
 
 # Logging middleware
 @app.middleware("http")
@@ -123,14 +146,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Dependency to get DB session
-def get_db():
-    """Get database session"""
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 
 # Event handlers
 @app.on_event("startup")
@@ -150,31 +165,65 @@ async def root():
         "version": "0.1.0"
     }
 
-@app.get("/health", tags=["Health"])
-async def health_check():
-    """Health check endpoint"""
-    try:
-        # Try to create a connection to check database connectivity
-        with engine.connect() as conn:
-            database_status = "connected"
-    except Exception as e:
-        database_status = f"disconnected: {str(e)}"
-    
-    return {
-        "status": "ok",
-        "message": "API is running",
-        "database": database_status
-    }
 
 # Import and include routers here
 from .routers import projects as projects_router
 from .routers import app_generation as app_generation_router
+from .routers import auth as auth_router
 
 # Include routers with appropriate prefixes
+app.include_router(auth_router.router, tags=["authentication"])
 app.include_router(projects_router.router, prefix="/projects", tags=["projects"])
-app.include_router(app_generation_router.router, prefix="/api/v1", tags=["app-generation"])
+app.include_router(app_generation_router.router, tags=["app-generation"])
 
-# Health endpoint is already defined above
+# Enhanced health and monitoring endpoints
+
+@app.get("/health", tags=["Health"])
+async def health_check(db: Session = Depends(get_db)):
+    """Comprehensive health check endpoint."""
+    try:
+        health_data = await monitoring_service.get_comprehensive_health(db)
+        status_code = 200
+        
+        if health_data["status"] == "warning":
+            status_code = 200  # Still OK but with warnings
+        elif health_data["status"] == "critical":
+            status_code = 503  # Service unavailable
+        
+        return JSONResponse(content=health_data, status_code=status_code)
+        
+    except Exception as e:
+        logger.error(f"Health check failed: {str(e)}")
+        return JSONResponse(
+            content={
+                "status": "critical",
+                "error": str(e),
+                "timestamp": datetime.utcnow().isoformat()
+            },
+            status_code=503
+        )
+
+@app.get("/metrics", response_class=PlainTextResponse, tags=["Monitoring"])
+async def prometheus_metrics(db: Session = Depends(get_db)):
+    """Prometheus metrics endpoint."""
+    try:
+        metrics = monitoring_service.get_prometheus_metrics(db)
+        return PlainTextResponse(content=metrics, media_type="text/plain")
+    except Exception as e:
+        logger.error(f"Error generating metrics: {str(e)}")
+        return PlainTextResponse(
+            content=f"# Error generating metrics: {str(e)}",
+            status_code=500
+        )
+
+@app.get("/status", tags=["Health"])
+async def simple_status():
+    """Simple status endpoint for quick health checks."""
+    return {
+        "status": "ok",
+        "timestamp": datetime.utcnow().isoformat(),
+        "uptime_seconds": int(monitoring_service.get_uptime().total_seconds())
+    }
 
 # Debug endpoint for download_url testing
 @app.get("/debug/{project_id}", tags=["Debug"])

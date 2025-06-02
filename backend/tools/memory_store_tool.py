@@ -22,7 +22,7 @@ class MemoryStoreTool(AINativeBaseTool):
     
     def __init__(self) -> None:
         """Initialize the MemoryStoreTool with the appropriate endpoint."""
-        super().__init__(endpoint="agent/memory")
+        super().__init__(endpoint="memory/store")
     
     async def _call(
         self,

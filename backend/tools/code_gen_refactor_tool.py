@@ -22,7 +22,7 @@ class CodeGenRefactorTool(AINativeBaseTool):
     
     def __init__(self) -> None:
         """Initialize the CodeGenRefactorTool with the appropriate endpoint."""
-        super().__init__(endpoint="code-generation/refactor")
+        super().__init__(endpoint="code/refactor")
     
     async def _call(
         self,

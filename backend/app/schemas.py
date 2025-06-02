@@ -14,7 +14,7 @@ class ProjectStatus(str, Enum):
 class ProjectBase(BaseModel):
     name: str
     description: Optional[str] = None
-    status: ProjectStatus = ProjectStatus.DRAFT  # Use enum but ensure JSON serializability
+    status: ProjectStatus = "draft"
     tech_stack: Optional[str] = None
     styling: Optional[str] = None
     canvas_layout: Optional[Dict[str, Any]] = None
@@ -54,30 +54,7 @@ class Project(ProjectBase):
     model_config = ConfigDict(
         from_attributes=True,  # Replaces orm_mode
         populate_by_name=True,
-        exclude_none=False,  # Don't exclude None values
-        # Explicit JSON encoders for known non-JSON serializable types
-        json_encoders={
-            datetime: lambda v: v.isoformat() if v else None,
-            ProjectStatus: lambda v: v.value if hasattr(v, 'value') else str(v)
-        },
-        # Example schema 
-        json_schema_extra={
-            "example": {
-                "id": 1,
-                "name": "My Project",
-                "description": "A test project",
-                "status": "in_progress",
-                "tech_stack": "React + FastAPI + PostgreSQL",
-                "styling": "tailwind",
-                "canvas_layout": None,
-                "user_id": None,
-                "download_url": "/api/v1/downloads/my_project.zip",
-                "created_at": "2025-06-01T00:00:00",
-                "updated_at": "2025-06-01T00:05:00",
-                "generation_steps": [],
-                "logs": []
-            }
-        }
+        exclude_none=False  # Don't exclude None values
     )
     
     # Custom serializer method to handle enums and ensure download_url is included
@@ -108,7 +85,7 @@ class StepStatus(str, Enum):
 class GenerationStepBase(BaseModel):
     project_id: int
     step_name: str
-    status: StepStatus = StepStatus.PENDING
+    status: StepStatus = "pending"
     details: Optional[Dict[str, Any]] = None
     error: Optional[str] = None
 
