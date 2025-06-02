@@ -21,7 +21,7 @@ from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, Response
 from fastapi.responses import FileResponse, JSONResponse
 from sqlalchemy.orm import Session
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from typing import Generator, Optional, Any, Dict, List
 
 from .. import models
@@ -36,6 +36,11 @@ from tools.code_gen_create_tool import CodeGenCreateTool
 from tools.code_gen_refactor_tool import CodeGenRefactorTool
 from tools.memory_store_tool import MemoryStoreTool
 from tools.memory_search_tool import MemorySearchTool
+
+# Import services
+from ..services.ollama_service import OllamaService
+from ..services.coordination_service import CoordinationService
+from ..services.canvas_code_generator import CanvasCodeGenerator
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -59,6 +64,14 @@ class AppSpec(BaseModel):
     tech_stack: str = Field(..., description="Technology stack to use")
     styling: Optional[str] = Field(None, description="Frontend styling framework")
 
+class ProjectGenerationRequest(BaseModel):
+    """Project generation request model for coordination workflows."""
+    project_name: str = Field(..., description="Name of the project")
+    description: str = Field(..., description="Description of the project")
+    features: List[str] = Field(..., description="List of features to implement")
+    tech_stack: str = Field(..., description="Technology stack to use")
+    styling: Optional[str] = Field(None, description="Frontend styling framework")
+
 class GenerationStepResponse(BaseModel):
     """Response model for generation steps."""
     id: str
@@ -72,8 +85,7 @@ class GenerationStepResponse(BaseModel):
     created_at: str
     updated_at: Optional[str] = None
 
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
 
 class LogResponse(BaseModel):
     """Response model for log entries."""
@@ -86,8 +98,7 @@ class LogResponse(BaseModel):
     created_at: str
     updated_at: Optional[str] = None
 
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
 
 class ProjectResponse(BaseModel):
     """Response model for project generation."""
@@ -139,42 +150,81 @@ async def generate_app(app_spec: AppSpec, background_tasks: BackgroundTasks, db:
         project = Project(
             name=app_spec.project_name,
             description=app_spec.description,
+            features=app_spec.features,
             tech_stack=app_spec.tech_stack,
             styling=app_spec.styling,
             status=ProjectStatus.IN_PROGRESS,
         )
         db.add(project)
         
-        # TODO: Call LLM to generate plan (will be implemented with mock data for now)
-        # Mock plan data for development
-        steps = [
-            {
-                "sequence_order": 1,
-                "step_name": "generate_models",
-                "tool_name": "codegen_create",
-                "input_payload": {
-                    "project_name": app_spec.project_name,
-                    "description": app_spec.description,
-                    "features": app_spec.features,
-                    "tech_stack": app_spec.tech_stack,
-                    "styling": app_spec.styling,
-                    "file_path": "backend/app/models.py"
+        # Generate plan using Ollama
+        try:
+            ollama_service = OllamaService()
+            plan_steps = ollama_service.generate_app_plan(
+                project_name=app_spec.project_name,
+                description=app_spec.description,
+                features=app_spec.features,
+                tech_stack=app_spec.tech_stack,
+                styling=app_spec.styling or "Plain CSS"
+            )
+            
+            # Convert plan steps to our format
+            steps = []
+            for i, step in enumerate(plan_steps):
+                steps.append({
+                    "sequence_order": i + 1,
+                    "step_name": f"step_{i+1}_{step['tool']}",
+                    "tool_name": step["tool"],
+                    "input_payload": step["input"]
+                })
+                
+            logger.info(f"Generated {len(steps)} steps using Ollama for project '{app_spec.project_name}'")
+            
+        except Exception as e:
+            logger.error(f"Failed to generate plan with Ollama: {str(e)}")
+            # Log the error for debugging
+            log = Log(
+                project_id=None,  # Will be set after project creation
+                level=LogLevel.WARNING,
+                message=f"Ollama planning failed, using fallback: {str(e)}",
+                source="planning"
+            )
+            
+            # Fall back to basic steps
+            steps = [
+                {
+                    "sequence_order": 1,
+                    "step_name": "generate_models",
+                    "tool_name": "codegen_create",
+                    "input_payload": {
+                        "template": "sqlalchemy-model" if "React" in app_spec.tech_stack else "basic-model",
+                        "file_path": "backend/app/models.py",
+                        "variables": {
+                            "project_name": app_spec.project_name,
+                            "description": app_spec.description,
+                            "features": app_spec.features,
+                            "tech_stack": app_spec.tech_stack,
+                            "styling": app_spec.styling or "Plain CSS"
+                        }
+                    }
+                },
+                {
+                    "sequence_order": 2,
+                    "step_name": "generate_api_routes",
+                    "tool_name": "codegen_create",
+                    "input_payload": {
+                        "template": "fastapi-route" if "FastAPI" in app_spec.tech_stack else "basic-api",
+                        "file_path": "backend/app/routers/api.py",
+                        "variables": {
+                            "project_name": app_spec.project_name,
+                            "description": app_spec.description,
+                            "features": app_spec.features,
+                            "tech_stack": app_spec.tech_stack,
+                            "styling": app_spec.styling or "Plain CSS"
+                        }
+                    }
                 }
-            },
-            {
-                "sequence_order": 2,
-                "step_name": "generate_api_routes",
-                "tool_name": "codegen_create",
-                "input_payload": {
-                    "project_name": app_spec.project_name,
-                    "description": app_spec.description,
-                    "features": app_spec.features,
-                    "tech_stack": app_spec.tech_stack,
-                    "styling": app_spec.styling,
-                    "file_path": "backend/app/routers/api.py"
-                }
-            }
-        ]
+            ]
         
         # Commit to get the auto-generated project ID
         db.flush()
@@ -444,8 +494,12 @@ async def execute_generation_steps(project_id: str):
                 
                 # Execute tool with timeout (5 minutes per tool)
                 try:
+                    params = step.input_payload.get('variables', step.input_payload)
+                    if isinstance(params, str):
+                        import json
+                        params = json.loads(params.replace("'", '"'))
                     output = await asyncio.wait_for(
-                        tool._call(**step.input_payload),
+                        tool._call(**params),
                         timeout=300  # 5 minutes per tool
                     )
                     check_timeout()  # Check overall timeout
@@ -798,6 +852,49 @@ async def stream_project_logs(project_id: str, response: Response, db: Session =
         )
 
 
+@router.get("/recall-last-app")
+async def recall_last_app(db: Session = Depends(get_db)):
+    """
+    Recall the last generated app specification.
+    
+    Args:
+        db: Database session
+        
+    Returns:
+        App specification of the most recent project
+    """
+    try:
+        # Get the most recent project
+        latest_project = (
+            db.query(Project)
+            .order_by(Project.created_at.desc())
+            .first()
+        )
+        
+        if not latest_project:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="No previous app found"
+            )
+        
+        # Return the project specification
+        return {
+            "project_name": latest_project.name,
+            "description": latest_project.description,
+            "features": latest_project.features or [],
+            "tech_stack": latest_project.tech_stack,
+            "styling": latest_project.styling
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error recalling last app: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error recalling last app: {str(e)}"
+        )
+
 @router.get("/downloads/{filename}")
 async def download_project(filename: str):
     """
@@ -825,3 +922,293 @@ async def download_project(filename: str):
         filename=filename,
         media_type="application/zip"
     )
+
+# Coordination endpoints for multi-agent workflows
+
+@router.post("/coordination/create-workflow")
+async def create_coordination_workflow(
+    request: ProjectGenerationRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Create a multi-agent coordination workflow for code generation.
+    
+    Args:
+        request: Project generation request with specifications
+        db: Database session
+        
+    Returns:
+        Dictionary containing workflow_id and status
+    """
+    try:
+        logger.info(f"Creating coordination workflow for project: {request.project_name}")
+        
+        # Create project record
+        project = Project(
+            name=request.project_name,
+            description=request.description,
+            features=request.features,
+            tech_stack=request.tech_stack,
+            styling=request.styling,
+            status=ProjectStatus.COORDINATING
+        )
+        db.add(project)
+        db.commit()
+        db.refresh(project)
+        
+        # Create coordination service and workflow
+        coordination_service = CoordinationService()
+        
+        project_spec = {
+            "project_id": project.id,
+            "project_name": request.project_name,
+            "description": request.description,
+            "features": request.features,
+            "tech_stack": request.tech_stack,
+            "styling": request.styling
+        }
+        
+        workflow_result = await coordination_service.create_generation_workflow(project_spec)
+        
+        if workflow_result.get("success"):
+            # Update project with workflow ID
+            project.coordination_workflow_id = workflow_result["workflow_id"]
+            db.commit()
+            
+            logger.info(f"Created coordination workflow {workflow_result['workflow_id']} for project {project.id}")
+            
+            return {
+                "success": True,
+                "project_id": project.id,
+                "workflow_id": workflow_result["workflow_id"],
+                "estimated_duration": workflow_result.get("estimated_duration"),
+                "agents": workflow_result.get("agents", []),
+                "message": "Coordination workflow created successfully"
+            }
+        else:
+            project.status = ProjectStatus.FAILED
+            db.commit()
+            
+            logger.error(f"Failed to create coordination workflow: {workflow_result.get('message')}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to create coordination workflow: {workflow_result.get('message')}"
+            )
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating coordination workflow: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error creating coordination workflow: {str(e)}"
+        )
+
+@router.post("/coordination/execute-workflow/{workflow_id}")
+async def execute_coordination_workflow(
+    workflow_id: str,
+    db: Session = Depends(get_db)
+):
+    """
+    Execute a coordination workflow.
+    
+    Args:
+        workflow_id: ID of the workflow to execute
+        db: Database session
+        
+    Returns:
+        Dictionary containing execution status
+    """
+    try:
+        logger.info(f"Executing coordination workflow: {workflow_id}")
+        
+        # Find project by workflow ID
+        project = db.query(Project).filter(
+            Project.coordination_workflow_id == workflow_id
+        ).first()
+        
+        if not project:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Project not found for workflow {workflow_id}"
+            )
+        
+        # Update project status
+        project.status = ProjectStatus.GENERATING
+        db.commit()
+        
+        # Execute workflow
+        coordination_service = CoordinationService()
+        result = await coordination_service.execute_workflow(workflow_id)
+        
+        if result.get("success"):
+            logger.info(f"Started execution of workflow: {workflow_id}")
+            return {
+                "success": True,
+                "workflow_id": workflow_id,
+                "project_id": project.id,
+                "message": "Workflow execution started"
+            }
+        else:
+            project.status = ProjectStatus.FAILED
+            db.commit()
+            
+            logger.error(f"Failed to execute workflow: {result.get('message')}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to execute workflow: {result.get('message')}"
+            )
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error executing coordination workflow: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error executing coordination workflow: {str(e)}"
+        )
+
+@router.get("/coordination/workflow/{workflow_id}/status")
+async def get_coordination_workflow_status(
+    workflow_id: str,
+    db: Session = Depends(get_db)
+):
+    """
+    Get the status of a coordination workflow.
+    
+    Args:
+        workflow_id: ID of the workflow
+        db: Database session
+        
+    Returns:
+        Dictionary containing workflow status and progress
+    """
+    try:
+        # Find project by workflow ID
+        project = db.query(Project).filter(
+            Project.coordination_workflow_id == workflow_id
+        ).first()
+        
+        if not project:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Project not found for workflow {workflow_id}"
+            )
+        
+        # Get workflow status
+        coordination_service = CoordinationService()
+        result = await coordination_service.get_workflow_status(workflow_id)
+        
+        if result.get("success"):
+            return {
+                "success": True,
+                "workflow_id": workflow_id,
+                "project_id": project.id,
+                "status": result.get("data", {}),
+                "project_status": project.status.value
+            }
+        else:
+            logger.error(f"Failed to get workflow status: {result.get('message')}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to get workflow status: {result.get('message')}"
+            )
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting coordination workflow status: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error getting coordination workflow status: {str(e)}"
+        )
+
+# Canvas code generation endpoints
+
+class CanvasGenerationRequest(BaseModel):
+    """Request model for canvas code generation."""
+    name: str = Field(..., description="Project name")
+    description: Optional[str] = Field(None, description="Project description")
+    canvas_layout: Dict[str, Any] = Field(..., description="Canvas layout with components")
+    tech_stack: str = Field(default="React + FastAPI + PostgreSQL", description="Technology stack")
+    styling: str = Field(default="Tailwind CSS", description="Styling framework")
+
+@router.post("/canvas/generate-code")
+async def generate_code_from_canvas(
+    request: CanvasGenerationRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Generate React code from canvas layout.
+    
+    Args:
+        request: Canvas generation request with layout and specifications
+        db: Database session
+        
+    Returns:
+        Dictionary containing generated code files
+    """
+    try:
+        logger.info(f"Generating code from canvas for project: {request.name}")
+        
+        # Create project record
+        project = Project(
+            name=request.name,
+            description=request.description,
+            canvas_layout=request.canvas_layout,
+            tech_stack=request.tech_stack,
+            styling=request.styling,
+            status=ProjectStatus.IN_PROGRESS
+        )
+        db.add(project)
+        db.commit()
+        db.refresh(project)
+        
+        # Generate code using canvas code generator
+        canvas_generator = CanvasCodeGenerator()
+        
+        project_spec = {
+            "name": request.name,
+            "description": request.description,
+            "tech_stack": request.tech_stack,
+            "styling": request.styling
+        }
+        
+        result = await canvas_generator.generate_code_from_layout(
+            request.canvas_layout, 
+            project_spec
+        )
+        
+        if result.get("success"):
+            # Update project status
+            project.status = ProjectStatus.COMPLETED
+            db.commit()
+            
+            logger.info(f"Successfully generated code for canvas project {project.id}")
+            
+            return {
+                "success": True,
+                "project_id": project.id,
+                "files": result["files"],
+                "analysis": result["analysis"],
+                "components_count": result["components_count"],
+                "message": "Code generated successfully from canvas layout"
+            }
+        else:
+            project.status = ProjectStatus.FAILED
+            db.commit()
+            
+            logger.error(f"Failed to generate code from canvas: {result.get('message')}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to generate code: {result.get('message')}"
+            )
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error generating code from canvas: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error generating code from canvas: {str(e)}"
+        )

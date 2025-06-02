@@ -22,7 +22,7 @@ class MemorySearchTool(AINativeBaseTool):
     
     def __init__(self) -> None:
         """Initialize the MemorySearchTool with the appropriate endpoint."""
-        super().__init__(endpoint="agent/memory/search")
+        super().__init__(endpoint="memory/search")
     
     async def _call(
         self,

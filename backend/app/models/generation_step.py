@@ -39,7 +39,7 @@ class GenerationStep(Base, BaseMixin):
     step_name = Column(String(100), nullable=False)  # e.g., "generate_models", "create_routes"
     tool_name = Column(String(100), nullable=False)  # e.g., "codegen_create", "codegen_refactor"
     sequence_order = Column(Integer, nullable=False, default=0)  # Order in which steps should be executed
-    status = Column(Enum(StepStatus), default=StepStatus.PENDING, nullable=False)
+    status = Column(Enum(StepStatus), default="pending", nullable=False)
     input_payload = Column(JSON, nullable=True)  # Input data for the tool
     output_payload = Column(JSON, nullable=True)  # Output data from the tool
     details = Column(JSON, nullable=True)  # Additional details about the step

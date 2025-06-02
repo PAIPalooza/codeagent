@@ -1,0 +1,60 @@
+{
+  "agents": [
+    "DBSchemaAgent", 
+    "BackendAgent", 
+    "FrontendAgent", 
+    "StylingAgent",
+    "PackagingAgent"
+  ],
+  "workflow": [
+    {
+      "agent": "DBSchemaAgent",
+      "action": "generate_models",
+      "depends_on": [],
+      "description": "Generate database models and schema",
+      "timeout": 300
+    },
+    {
+      "agent": "BackendAgent",
+      "action": "generate_routes",
+      "depends_on": ["DBSchemaAgent"],
+      "description": "Generate API routes and business logic",
+      "timeout": 300
+    },
+    {
+      "agent": "FrontendAgent",
+      "action": "generate_components",
+      "depends_on": ["BackendAgent"],
+      "description": "Generate frontend components and views",
+      "timeout": 300
+    },
+    {
+      "agent": "StylingAgent",
+      "action": "apply_styles",
+      "depends_on": ["FrontendAgent"],
+      "description": "Apply styling framework and custom styles",
+      "timeout": 180
+    },
+    {
+      "agent": "PackagingAgent",
+      "action": "package_project",
+      "depends_on": ["StylingAgent"],
+      "description": "Create package files and documentation",
+      "timeout": 180
+    }
+  ],
+  "metadata": {
+    "project_id": "{project_id}",
+    "project_name": "{project_name}",
+    "tech_stack": "{tech_stack}",
+    "styling": "{styling}",
+    "features": "{features}",
+    "timestamp": "{timestamp}"
+  },
+  "settings": {
+    "max_parallel_agents": 3,
+    "retry_failed_tasks": true,
+    "max_retries": 2,
+    "total_timeout": 1800
+  }
+}
